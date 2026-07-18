@@ -23,6 +23,15 @@
   }
   header h1{margin:0;font-size:24px;color:var(--accent);letter-spacing:2px;}
   header .sub{margin-top:4px;font-size:15px;color:#7a6a4a;}
+
+  /* 课次切换栏 */
+  .switchbar{max-width:900px;margin:12px auto 0;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;padding:0 12px;}
+  .switchbar .lbl{font-size:13px;color:#7a6a4a;margin-right:2px;}
+  .switchbar .lbtn{font-family:inherit;cursor:pointer;border:1px solid var(--gold);background:#fff;
+    color:var(--accent);border-radius:20px;padding:6px 14px;font-size:14px;transition:.15s;}
+  .switchbar .lbtn:hover{background:var(--gold);color:#fff;}
+  .switchbar .lbtn.active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:bold;}
+
   .progress-wrap{max-width:760px;margin:10px auto 0;}
   .progress-bar{height:8px;background:var(--soft);border-radius:6px;overflow:hidden;}
   .progress-bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--gold),var(--accent));transition:width .25s;}
@@ -115,6 +124,7 @@
 <header>
   <h1 id="title">《易经》教你过好每一天</h1>
   <div class="sub" id="subtitle"></div>
+  <div class="switchbar" id="switchBar"><span class="lbl">📚 选课：</span></div>
   <div class="progress-wrap">
     <div class="progress-bar"><i id="pbar"></i></div>
     <div class="progress-txt" id="ptxt">第 1 / 1 句</div>
@@ -167,53 +177,18 @@
   </div>
 </div>
 
-<script src="lesson_data.js"></script>
 <script>
-const DATA = window.LESSON_DATA;
-const segs = DATA.segments;
-const DIAG = DATA.diagrams || {};
-const CAPS = DATA.captions || {};
-const N = segs.length;
-let idx = 0, autoplay = true, speed = 1.0, fontSize = 20;
+const BUILD = "20260718b";   // 部署版本戳：更新网页或课程后改此值以刷新浏览器缓存
+let DATA, segs, DIAG, CAPS, N, idx = 0;
+let autoplay = true, speed = 1.0, fontSize = 20;
 const audio = new Audio();
 audio.preload = "auto";
 
 const $ = id => document.getElementById(id);
-$("title").textContent = DATA.meta.title;
-$("subtitle").textContent = DATA.meta.subtitle;
-DATA.mantra.forEach(m => { const li=document.createElement("li"); li.textContent=m; $("mantraList").appendChild(li); });
 
-// 图鉴内容
-(function buildGallery(){
-  const g = $("gbody");
-  Object.keys(DIAG).forEach(k=>{
-    const item=document.createElement("div");
-    item.className="gitem";
-    item.innerHTML = DIAG[k] + `<div class="cap">${CAPS[k]||""}</div>`;
-    g.appendChild(item);
-  });
-})();
-$("btnGallery").onclick = () => $("gallery").classList.add("show");
-$("gClose").onclick = () => $("gallery").classList.remove("show");
-$("gallery").onclick = e => { if(e.target===$("gallery")) $("gallery").classList.remove("show"); };
-
-audio.addEventListener("timeupdate", () => {
-  if (audio.duration) $("seek").value = Math.round(audio.currentTime/audio.duration*1000);
-});
-audio.addEventListener("ended", () => {
-  const seg = segs[idx];
-  if (seg.k === "say" && autoplay) go(idx+1, true);
-});
-
-function playSrc(src){
-  audio.playbackRate = speed;
-  if (audio.src !== src){ audio.src = src; }
-  audio.currentTime = 0;
-  audio.play().catch(()=>{});
+function applyFont(){
+  document.querySelectorAll(".board-text,.quiz-q").forEach(e=>e.style.fontSize=fontSize+"px");
 }
-function setPlayIcon(){ $("btnPlay").textContent = audio.paused ? "▶" : "⏸"; }
-audio.addEventListener("play", setPlayIcon);
-audio.addEventListener("pause", setPlayIcon);
 
 function highlight(text){
   return text.replace(/(“[^”]*”|《[^》]*》|【[^】]*】)/g, '<span class="em">$1</span>');
@@ -246,7 +221,11 @@ function render(){
          <button class="btn" id="bNext2">我讲完了，下一句 ⏭</button>
        </div>`;
     $("sub").textContent = "❓ " + seg.q;
-    $("bAns").onclick = () => { $("rAns").classList.add("show"); playSrc(seg.audio.ans); };
+    // 同学回答：若本段无语音(早期课)，仅显示文字不播放
+    $("bAns").onclick = () => {
+      $("rAns").classList.add("show");
+      if (seg.audio.ans) playSrc(seg.audio.ans);
+    };
     $("bCmt").onclick = () => { $("rCmt").classList.add("show"); playSrc(seg.audio.cmt); };
     $("bNext2").onclick = () => go(idx+1, true);
   }
@@ -261,10 +240,110 @@ function go(i, doPlay){
   render();
 }
 
-function applyFont(){
-  document.querySelectorAll(".board-text,.quiz-q").forEach(e=>e.style.fontSize=fontSize+"px");
+function playSrc(src){
+  audio.playbackRate = speed;
+  if (audio.src !== src){ audio.src = src; }
+  audio.currentTime = 0;
+  audio.play().catch(()=>{});
+}
+function setPlayIcon(){ $("btnPlay").textContent = audio.paused ? "▶" : "⏸"; }
+audio.addEventListener("play", setPlayIcon);
+audio.addEventListener("pause", setPlayIcon);
+
+audio.addEventListener("timeupdate", () => {
+  if (audio.duration) $("seek").value = Math.round(audio.currentTime/audio.duration*1000);
+});
+audio.addEventListener("ended", () => {
+  const seg = segs[idx];
+  if (seg.k === "say" && autoplay) go(idx+1, true);
+});
+
+// ---- 加载某一课 ----
+const LESSON_MAP = {};   // n -> data 对象（全部课并存，切换即时）
+
+function loadLessonFile(n, done){
+  const s = document.createElement("script");
+  s.src = `lesson_data_${n}.js?v=${BUILD}`;
+  s.onload = () => { LESSON_MAP[n] = window.LESSON_DATA; done(true); };
+  s.onerror = () => done(false);
+  document.head.appendChild(s);
 }
 
+function loadLesson(d){
+  DATA = d;
+  segs = d.segments;
+  DIAG = d.diagrams || {};
+  CAPS = d.captions || {};
+  N = segs.length;
+  idx = 0;
+  audio.pause();
+
+  $("title").textContent = d.meta.title;
+  $("subtitle").textContent = d.meta.subtitle;
+
+  // 口诀列表
+  const ml = $("mantraList");
+  ml.innerHTML = "";
+  (d.mantra||[]).forEach(m => { const li=document.createElement("li"); li.textContent=m; ml.appendChild(li); });
+
+  // 图鉴
+  const g = $("gbody");
+  g.innerHTML = "";
+  Object.keys(DIAG).forEach(k=>{
+    const item=document.createElement("div");
+    item.className="gitem";
+    item.innerHTML = DIAG[k] + `<div class="cap">${CAPS[k]||""}</div>`;
+    g.appendChild(item);
+  });
+
+  render();
+}
+
+function showLesson(n){
+  if (LESSON_MAP[n]){
+    loadLesson(LESSON_MAP[n]);
+    highlightBtn(n);
+    window.scrollTo(0,0);
+  }
+}
+
+function buildBtn(n){
+  const b = document.createElement("button");
+  b.className = "lbtn";
+  b.textContent = "第"+n+"课";
+  b.dataset.n = n;
+  b.onclick = () => showLesson(n);
+  $("switchBar").appendChild(b);
+}
+function highlightBtn(n){
+  document.querySelectorAll("#switchBar .lbtn").forEach(x=>{
+    x.classList.toggle("active", (+x.dataset.n) === n);
+  });
+}
+
+// ---- 启动：从 第1课 起动态探测，直到 404 停止 ----
+(function init(){
+  let n = 1, order = [];
+  (function next(){
+    loadLessonFile(n, ok => {
+      if (ok){
+        buildBtn(n);
+        order.push(n);
+        n++;
+        next();
+      } else {
+        if (order.length){
+          // 默认显示最新（探测到的最后一课）
+          showLesson(order[order.length-1]);
+        } else {
+          $("card").innerHTML = '<span class="seg-tag">提示</span><div class="board-text">没有找到课程数据，请确认 lesson_data_1.js 等文件已部署到同一目录。</div>';
+        }
+      }
+    });
+  })();
+})();
+
+// ---- 控件绑定（全局一次）----
 $("btnPlay").onclick = () => { if (audio.paused) audio.play().catch(()=>{}); else audio.pause(); };
 $("btnPrev").onclick = () => go(idx-1, true);
 $("btnNext").onclick = () => go(idx+1, true);
@@ -273,6 +352,10 @@ $("speed").onchange = e => { speed = parseFloat(e.target.value); audio.playbackR
 $("auto").onchange = e => autoplay = e.target.checked;
 $("fsUp").onclick = () => { fontSize=Math.min(30,fontSize+2); applyFont(); };
 $("fsDown").onclick = () => { fontSize=Math.max(16,fontSize-2); applyFont(); };
+
+$("btnGallery").onclick = () => $("gallery").classList.add("show");
+$("gClose").onclick = () => $("gallery").classList.remove("show");
+$("gallery").onclick = e => { if(e.target===$("gallery")) $("gallery").classList.remove("show"); };
 
 document.addEventListener("keydown", e=>{
   if (e.target.tagName==="TEXTAREA") return;
@@ -301,8 +384,6 @@ document.addEventListener("keydown", e=>{
   });
   handle.addEventListener("pointerup", ()=> dragging=false);
 })();
-
-render();
 </script>
 </body>
 </html>
