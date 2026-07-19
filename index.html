@@ -178,7 +178,7 @@
 </div>
 
 <script>
-const BUILD = "20260719b";   // 部署版本戳：更新网页或课程后改此值以刷新浏览器缓存
+const BUILD = "20260719c";   // 部署版本戳：更新网页或课程后改此值以刷新浏览器缓存
 let DATA, segs, DIAG, CAPS, N, idx = 0;
 let autoplay = true, speed = 1.0, fontSize = 20;
 const audio = new Audio();
@@ -273,8 +273,11 @@ audio.addEventListener("ended", () => {
 const LESSON_MAP = {};   // n -> data 对象（全部课并存，切换即时）
 
 function loadLessonFile(n, done){
+  // file:// 本地打开时去掉 ?v 缓存戳（文件系统不认查询串，否则会 404/加载失败）；
+  // http(s) 在线时保留 ?v 以强制刷新缓存。
+  const q = (location.protocol === "file:") ? "" : ("?v="+BUILD);
   const s = document.createElement("script");
-  s.src = `lesson_data_${n}.js?v=${BUILD}`;
+  s.src = `lesson_data_${n}.js${q}`;
   s.onload = () => { LESSON_MAP[n] = window.LESSON_DATA; done(true); };
   s.onerror = () => done(false);
   document.head.appendChild(s);
