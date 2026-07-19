@@ -178,7 +178,7 @@
 </div>
 
 <script>
-const BUILD = "20260719a";   // 部署版本戳：更新网页或课程后改此值以刷新浏览器缓存
+const BUILD = "20260719b";   // 部署版本戳：更新网页或课程后改此值以刷新浏览器缓存
 let DATA, segs, DIAG, CAPS, N, idx = 0;
 let autoplay = true, speed = 1.0, fontSize = 20;
 const audio = new Audio();
@@ -241,9 +241,20 @@ function go(i, doPlay){
 }
 
 function playSrc(src){
+  if (!src){ return; }
   audio.playbackRate = speed;
-  if (audio.src !== src){ audio.src = src; }
-  audio.currentTime = 0;
+  if (audio.src !== src){
+    // 关键修复：换新源后不要再手动设 currentTime。
+    // 新源尚未加载(readyState=0)时设 currentTime 会抛 InvalidStateError，
+    // 导致后面的 audio.play() 永远不执行（表现为只能放第一句/整页没声音）。
+    // 浏览器赋值新 src 后会自动把 currentTime 归零，无需手动重置。
+    audio.src = src;
+  } else {
+    // 同一句重复播放：从头开始（已加载，可安全重置）
+    try { audio.currentTime = 0; } catch(e){}
+  }
+  // 浏览器自动播放策略：若尚无用户交互，play() 会被拒绝，这里静默忽略；
+  // 用户在页面上点一下(▶ 或任意处)后即会正常连播。
   audio.play().catch(()=>{});
 }
 function setPlayIcon(){ $("btnPlay").textContent = audio.paused ? "▶" : "⏸"; }
@@ -364,6 +375,18 @@ document.addEventListener("keydown", e=>{
   else if (e.key==="ArrowLeft") go(idx-1,true);
   else if (e.key===" "){ e.preventDefault(); $("btnPlay").click(); }
 });
+
+// 首次用户交互即解锁播放（满足浏览器自动播放策略）：
+// 点页面任意处(非控制条)或按任意键，若还没播放就自动开始当前句，之后整页连播。
+let kicked=false;
+function maybeKick(e){
+  if (kicked) return;
+  if (e.target && e.target.closest && e.target.closest("#panel")) return; // 控制条交给各自按钮
+  kicked=true;
+  if (audio.paused) audio.play().catch(()=>{});
+}
+document.addEventListener("pointerdown", maybeKick);
+document.addEventListener("keydown", maybeKick);
 
 // 拖动面板（不挡讲解，可放任意位置）
 (function(){
